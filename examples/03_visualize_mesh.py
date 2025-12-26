@@ -82,6 +82,9 @@ def main():
 
             # For now, focus on tetrahedra for 3D or triangles for 2D
             mesh = None
+            physical_tags = None
+            cells = None
+
             if "tetra" in cells_dict:
                 # Create unstructured grid from tetrahedra
                 import numpy as np
@@ -93,10 +96,16 @@ def main():
                     vtk_cells.extend([4] + cell.tolist())
                 mesh = pv.UnstructuredGrid(vtk_cells, cell_types, mesh_data.points)
 
-                # Add physical group data for material coloring
-                if "tetra" in mesh_data.cell_data and "gmsh:physical" in mesh_data.cell_data["tetra"]:
-                    physical_tags = np.concatenate(mesh_data.cell_data["tetra"]["gmsh:physical"])
-                    mesh.cell_data["Material"] = physical_tags
+                # Get physical tags from cell_data (list format from meshio)
+                if "gmsh:physical" in mesh_data.cell_data:
+                    # Find tetra blocks and concatenate their physical tags
+                    phys_tags_blocks = []
+                    for i, cell_block in enumerate(mesh_data.cells):
+                        if cell_block.type == "tetra":
+                            phys_tags_blocks.append(mesh_data.cell_data["gmsh:physical"][i])
+                    if phys_tags_blocks:
+                        physical_tags = np.concatenate(phys_tags_blocks)
+                        mesh.cell_data["Material"] = physical_tags
             elif "triangle" in cells_dict:
                 # Create polydata from triangles
                 import numpy as np
@@ -115,10 +124,33 @@ def main():
                     # Color surface elements by their y-coordinate
                     if mesh.n_points > 0:
                         import numpy as np
-                        # Get y-coordinates of surface points
+
+                        # Find actual interface height from the volume mesh physical tags
+                        # Get y-coordinates of nodes in each material
+                        mat1_y_coords = []
+                        mat2_y_coords = []
+
+                        if physical_tags is not None and cells is not None:
+                            for i, tag in enumerate(physical_tags):
+                                elem = cells[i]  # Tetrahedral element
+                                elem_y_coords = [mesh.points[node, 1] for node in elem]
+                                if tag == 1:  # Material 1
+                                    mat1_y_coords.extend(elem_y_coords)
+                                elif tag == 2:  # Material 2
+                                    mat2_y_coords.extend(elem_y_coords)
+
+                        # Interface is at top of Material 1 / bottom of Material 2
+                        if mat1_y_coords and mat2_y_coords:
+                            mat1_max_y = max(mat1_y_coords)
+                            mat2_min_y = min(mat2_y_coords)
+                            y_interface = (mat1_max_y + mat2_min_y) / 2
+                        else:
+                            y_coords = surface.points[:, 1]
+                            y_min, y_max = y_coords.min(), y_coords.max()
+                            y_interface = (y_min + y_max) / 2
+
                         y_coords = surface.points[:, 1]
                         y_min, y_max = y_coords.min(), y_coords.max()
-                        y_interface = (y_min + y_max) / 2
                         interface_tolerance = (y_max - y_min) * 0.01  # Very thin interface (1% of height)
 
                         # Assign material IDs based on cell centroid y-position
@@ -144,16 +176,40 @@ def main():
 
                 # Add mesh with material-based coloring
                 if "Material" in surface.array_names:
+                    # Create custom colormap for discrete material IDs
+                    import matplotlib.pyplot as plt
+                    from matplotlib.colors import ListedColormap
+
+                    # Map material IDs to colors
+                    colors_dict = {
+                        1: [1.0, 0.42, 0.42],   # Red for Material 1
+                        2: [0.31, 0.80, 0.77],  # Cyan for Material 2
+                        30: [1.0, 0.90, 0.43],  # Yellow for Disbond
+                    }
+
+                    # Get unique material IDs and assign colors
+                    unique_ids = np.unique(surface["Material"])
+                    color_array = np.zeros((surface.n_cells, 3))
+                    for i, mat_id in enumerate(surface["Material"]):
+                        if mat_id in colors_dict:
+                            color_array[i] = colors_dict[mat_id]
+
                     plotter.add_mesh(
                         surface,
                         show_edges=True,
-                        scalars="Material",
-                        cmap=["#FF6B6B", "#4ECDC4", "#FFE66D"],  # Red, Cyan, Yellow for materials
+                        rgb=True,
+                        scalars=color_array,
                         edge_color="black",
                         line_width=0.5,
                         opacity=0.95,
-                        show_scalar_bar=True,
-                        scalar_bar_args={'title': 'Material ID', 'vertical': True},
+                    )
+
+                    # Add custom legend
+                    plotter.add_text(
+                        "Material 1 (Red)\nMaterial 2 (Cyan)\nDisbond (Yellow)",
+                        position='upper_right',
+                        font_size=10,
+                        color='black'
                     )
                 else:
                     plotter.add_mesh(

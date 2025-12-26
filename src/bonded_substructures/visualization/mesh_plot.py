@@ -153,10 +153,45 @@ def plot_mesh_matplotlib(
         # Get all surface elements
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-        # Find the interface height (estimate from node coordinates)
+        # Find the actual interface height by examining volume physical groups
         y_coords = node_coords[:, 1]
         y_min, y_max = y_coords.min(), y_coords.max()
-        y_interface = (y_min + y_max) / 2  # Approximate interface location
+
+        # Try to find actual interface from physical groups by looking at element y-coordinates
+        y_interface = None
+        physical_groups_3d = gmsh.model.getPhysicalGroups(dim=3)
+
+        # Get y-coordinates of elements in each material
+        mat1_y_coords = []
+        mat2_y_coords = []
+
+        for dim, tag in physical_groups_3d:
+            if tag == 1:  # Material 1
+                entities = gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
+                for entity in entities:
+                    # Get element nodes for this volume
+                    elem_types, elem_tags, elem_nodes = gmsh.model.mesh.getElements(dim, entity)
+                    for nodes in elem_nodes:
+                        for node in nodes:
+                            if node in node_map:
+                                mat1_y_coords.append(node_coords[node_map[node], 1])
+            elif tag == 2:  # Material 2
+                entities = gmsh.model.getEntitiesForPhysicalGroup(dim, tag)
+                for entity in entities:
+                    elem_types, elem_tags, elem_nodes = gmsh.model.mesh.getElements(dim, entity)
+                    for nodes in elem_nodes:
+                        for node in nodes:
+                            if node in node_map:
+                                mat2_y_coords.append(node_coords[node_map[node], 1])
+
+        # Interface is at the top of Material 1 / bottom of Material 2
+        if mat1_y_coords and mat2_y_coords:
+            mat1_max_y = max(mat1_y_coords)
+            mat2_min_y = min(mat2_y_coords)
+            y_interface = (mat1_max_y + mat2_min_y) / 2  # Average of top of mat1 and bottom of mat2
+        else:
+            y_interface = (y_min + y_max) / 2  # Fallback to midpoint
+
         interface_tolerance = (y_max - y_min) * 0.01  # Very thin interface region (1% of height)
 
         # Define colors for materials
