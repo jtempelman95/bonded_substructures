@@ -11,7 +11,6 @@ python = "^3.9"
 numpy = "^1.24.0"
 scipy = "^1.11.0"
 gmsh = "^4.12.0"
-fenics-dolfinx = "^0.7.0"
 pyvista = "^0.43.0"
 matplotlib = "^3.7.0"
 
@@ -21,6 +20,12 @@ pytest-cov = "^4.1.0"
 black = "^23.7.0"
 ruff = "^0.0.282"
 ipython = "^8.14.0"
+
+[tool.poetry.group.fenicsx]
+optional = true
+
+[tool.poetry.group.fenicsx.dependencies]
+fenics-dolfinx = {version = "^0.7.0", optional = true}
 
 [tool.black]
 line-length = 100

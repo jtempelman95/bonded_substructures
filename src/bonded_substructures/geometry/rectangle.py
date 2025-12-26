@@ -115,7 +115,7 @@ class BondedRectangle(BondedGeometry):
         l4 = gmsh.model.geo.addLine(p5, p1)  # Left side (partial)
 
         # Create lines for material 2 (top)
-        l5 = gmsh.model.geo.addLine(p5, p6)  # Interface (same as l3 but opposite direction)
+        l5 = gmsh.model.geo.addLine(p5, p6)  # Interface (opposite direction from l3)
         l6 = gmsh.model.geo.addLine(p6, p3)  # Right side (partial)
         l7 = gmsh.model.geo.addLine(p3, p4)  # Top
         l8 = gmsh.model.geo.addLine(p4, p5)  # Left side (partial)
@@ -128,9 +128,11 @@ class BondedRectangle(BondedGeometry):
             )
         else:
             # Without disbond, simple two-surface geometry
-            curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, -l3, -l4])
+            # Bottom surface: p1 -> p2 -> p6 -> p5 -> p1
+            curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
             surface_1 = gmsh.model.geo.addPlaneSurface([curve_loop_1])
 
+            # Top surface: p5 -> p6 -> p3 -> p4 -> p5
             curve_loop_2 = gmsh.model.geo.addCurveLoop([l5, l6, l7, l8])
             surface_2 = gmsh.model.geo.addPlaneSurface([curve_loop_2])
 
@@ -169,7 +171,8 @@ class BondedRectangle(BondedGeometry):
     ) -> Tuple[int, int, int]:
         """Create geometry with a disbond region.
 
-        This creates a thin layer at the interface representing the disbond.
+        For the initial version, we create a simple embedded disk at the interface
+        that will be meshed separately and tagged as the disbond region.
 
         Args:
             p1-p6: Point tags
@@ -178,87 +181,42 @@ class BondedRectangle(BondedGeometry):
         Returns:
             Tuple of (surface_1, surface_2, disbond_surface) tags
         """
-        # For simplicity in the initial version, we'll create the disbond as
-        # a circular or rectangular region embedded at the interface.
-        # A more sophisticated approach would create a thin layer.
+        # Create the two main rectangles first (same as without disbond)
+        curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
+        surface_1 = gmsh.model.geo.addPlaneSurface([curve_loop_1])
+
+        curve_loop_2 = gmsh.model.geo.addCurveLoop([l5, l6, l7, l8])
+        surface_2 = gmsh.model.geo.addPlaneSurface([curve_loop_2])
+
+        # Create a thin disbond region embedded at the interface using OCC
+        gmsh.model.geo.synchronize()
 
         x_center, y_center = self._disbond_position
         size = self._disbond_size
 
+        # Create a thin rectangular disbond region at the interface
+        # This represents a delamination zone
+        disbond_thickness = self.mesh_size * 0.1  # Very thin layer
+        y_bottom = y_center - disbond_thickness / 2
+        y_top = y_center + disbond_thickness / 2
+
         if self._disbond_shape == "circular":
-            # Create circular disbond region
-            disbond_center = gmsh.model.geo.addPoint(x_center, y_center, 0, self.mesh_size * 0.5)
-            disbond_boundary = gmsh.model.geo.addCircle(
-                x_center, y_center, 0, size, angle1=0, angle2=2*np.pi
-            )
-            disbond_loop = gmsh.model.geo.addCurveLoop([disbond_boundary])
-            disbond_surface = gmsh.model.geo.addPlaneSurface([disbond_loop])
-
+            # Create circular disbond using OCC
+            disbond_surface = gmsh.model.occ.addDisk(x_center, y_center, 0, size, size)
         else:  # rectangular
-            # Create rectangular disbond region
-            x_min = x_center - size
-            x_max = x_center + size
-            y_min = y_center - size * 0.1  # Thin in y-direction
-            y_max = y_center + size * 0.1
-
-            pd1 = gmsh.model.geo.addPoint(x_min, y_min, 0, self.mesh_size * 0.5)
-            pd2 = gmsh.model.geo.addPoint(x_max, y_min, 0, self.mesh_size * 0.5)
-            pd3 = gmsh.model.geo.addPoint(x_max, y_max, 0, self.mesh_size * 0.5)
-            pd4 = gmsh.model.geo.addPoint(x_min, y_max, 0, self.mesh_size * 0.5)
-
-            ld1 = gmsh.model.geo.addLine(pd1, pd2)
-            ld2 = gmsh.model.geo.addLine(pd2, pd3)
-            ld3 = gmsh.model.geo.addLine(pd3, pd4)
-            ld4 = gmsh.model.geo.addLine(pd4, pd1)
-
-            disbond_loop = gmsh.model.geo.addCurveLoop([ld1, ld2, ld3, ld4])
-            disbond_surface = gmsh.model.geo.addPlaneSurface([disbond_loop])
-
-        # Create material surfaces with disbond hole (use boolean operations)
-        gmsh.model.geo.synchronize()
-
-        # Material 1 surface (bottom)
-        curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, -l3, -l4])
-        surface_1_full = gmsh.model.geo.addPlaneSurface([curve_loop_1])
-
-        # Material 2 surface (top)
-        curve_loop_2 = gmsh.model.geo.addCurveLoop([l5, l6, l7, l8])
-        surface_2_full = gmsh.model.geo.addPlaneSurface([curve_loop_2])
-
-        # Use fragment to split surfaces at disbond boundary
-        # This ensures conforming mesh at the disbond interface
-        gmsh.model.geo.synchronize()
-        out, _ = gmsh.model.occ.fragment(
-            [(2, surface_1_full), (2, surface_2_full)],
-            [(2, disbond_surface)]
-        )
+            width_disbond = size * 2
+            x_corner = x_center - size
+            disbond_surface = gmsh.model.occ.addRectangle(
+                x_corner, y_bottom, 0, width_disbond, disbond_thickness
+            )
 
         gmsh.model.occ.synchronize()
 
-        # The fragment operation returns all resulting surfaces
-        # We need to identify which is which based on their centroids
-        surfaces = [tag for dim, tag in out if dim == 2]
+        # Note: The disbond is created as a separate surface that overlaps the interface
+        # In a more sophisticated version, we would use boolean operations to
+        # properly split the domains. For now, this creates a marked region.
 
-        # Classify surfaces by their y-centroid
-        surface_1 = None
-        surface_2 = None
-        disbond = None
-
-        for surf in surfaces:
-            com = gmsh.model.occ.getCenterOfMass(2, surf)
-            if com[1] < self.height_1 - 0.01:  # Below interface
-                surface_1 = surf
-            elif com[1] > self.height_1 + 0.01:  # Above interface
-                surface_2 = surf
-            else:  # At interface
-                disbond = surf
-
-        if surface_1 is None or surface_2 is None or disbond is None:
-            # Fallback: just return the surfaces as-is
-            print("Warning: Could not properly identify disbond surfaces. Using simple geometry.")
-            return surface_1_full, surface_2_full, disbond_surface
-
-        return surface_1, surface_2, disbond
+        return surface_1, surface_2, disbond_surface
 
     def get_mesh_info(self) -> dict:
         """Get information about the generated mesh.

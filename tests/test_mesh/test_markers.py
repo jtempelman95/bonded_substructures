@@ -62,4 +62,9 @@ def test_tag_enum_membership():
     """Test that tags are valid enum members."""
     assert PhysicalTag.MATERIAL_1 in PhysicalTag
     assert PhysicalTag.DISBOND_REGION in PhysicalTag
-    assert 999 not in PhysicalTag
+    # Test that an invalid value is not a valid tag
+    try:
+        PhysicalTag(999)
+        assert False, "Should have raised ValueError for invalid tag"
+    except ValueError:
+        pass  # Expected behavior
