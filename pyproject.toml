@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "bonded-substructures"
+version = "0.1.0"
+description = "Mesh generation and analysis tools for bonded materials with optional disbond regions using gmsh and FEniCSx"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "bonded_substructures", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.24.0"
+scipy = "^1.11.0"
+gmsh = "^4.12.0"
+fenics-dolfinx = "^0.7.0"
+pyvista = "^0.43.0"
+matplotlib = "^3.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+ruff = "^0.0.282"
+ipython = "^8.14.0"
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]  # Line too long (handled by black)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --cov=bonded_substructures --cov-report=term-missing"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
