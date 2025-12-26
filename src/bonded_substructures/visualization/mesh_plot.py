@@ -157,7 +157,7 @@ def plot_mesh_matplotlib(
         y_coords = node_coords[:, 1]
         y_min, y_max = y_coords.min(), y_coords.max()
         y_interface = (y_min + y_max) / 2  # Approximate interface location
-        interface_tolerance = (y_max - y_min) * 0.15  # 15% tolerance for interface region
+        interface_tolerance = (y_max - y_min) * 0.01  # Very thin interface region (1% of height)
 
         # Define colors for materials
         color_material_1 = '#FF6B6B'  # Red for bottom material

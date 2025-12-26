@@ -119,7 +119,7 @@ def main():
                         y_coords = surface.points[:, 1]
                         y_min, y_max = y_coords.min(), y_coords.max()
                         y_interface = (y_min + y_max) / 2
-                        interface_tolerance = (y_max - y_min) * 0.15
+                        interface_tolerance = (y_max - y_min) * 0.01  # Very thin interface (1% of height)
 
                         # Assign material IDs based on cell centroid y-position
                         material_ids = np.zeros(surface.n_cells)
