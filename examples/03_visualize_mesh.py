@@ -92,6 +92,11 @@ def main():
                 for cell in cells:
                     vtk_cells.extend([4] + cell.tolist())
                 mesh = pv.UnstructuredGrid(vtk_cells, cell_types, mesh_data.points)
+
+                # Add physical group data for material coloring
+                if "tetra" in mesh_data.cell_data and "gmsh:physical" in mesh_data.cell_data["tetra"]:
+                    physical_tags = np.concatenate(mesh_data.cell_data["tetra"]["gmsh:physical"])
+                    mesh.cell_data["Material"] = physical_tags
             elif "triangle" in cells_dict:
                 # Create polydata from triangles
                 import numpy as np
@@ -105,21 +110,60 @@ def main():
                 # Extract surface for better visualization of 3D volumes
                 if hasattr(mesh, 'extract_surface') and "tetra" in cells_dict:
                     surface = mesh.extract_surface()
+
+                    # Transfer material data from volume to surface based on geometry
+                    # Color surface elements by their y-coordinate
+                    if mesh.n_points > 0:
+                        import numpy as np
+                        # Get y-coordinates of surface points
+                        y_coords = surface.points[:, 1]
+                        y_min, y_max = y_coords.min(), y_coords.max()
+                        y_interface = (y_min + y_max) / 2
+                        interface_tolerance = (y_max - y_min) * 0.15
+
+                        # Assign material IDs based on cell centroid y-position
+                        material_ids = np.zeros(surface.n_cells)
+                        for i in range(surface.n_cells):
+                            cell = surface.get_cell(i)
+                            point_ids = cell.point_ids
+                            centroid_y = np.mean([surface.points[pid, 1] for pid in point_ids])
+
+                            if abs(centroid_y - y_interface) < interface_tolerance:
+                                material_ids[i] = 30  # Interface
+                            elif centroid_y < y_interface:
+                                material_ids[i] = 1   # Material 1
+                            else:
+                                material_ids[i] = 2   # Material 2
+
+                        surface.cell_data["Material"] = material_ids
                 else:
                     surface = mesh
 
                 # Create plotter with off-screen rendering
                 plotter = pv.Plotter(off_screen=True, window_size=[1200, 800])
 
-                # Add mesh with simple coloring
-                plotter.add_mesh(
-                    surface,
-                    show_edges=True,
-                    color="lightblue",
-                    edge_color="black",
-                    line_width=0.8,
-                    opacity=0.9,
-                )
+                # Add mesh with material-based coloring
+                if "Material" in surface.array_names:
+                    plotter.add_mesh(
+                        surface,
+                        show_edges=True,
+                        scalars="Material",
+                        cmap=["#FF6B6B", "#4ECDC4", "#FFE66D"],  # Red, Cyan, Yellow for materials
+                        edge_color="black",
+                        line_width=0.5,
+                        opacity=0.95,
+                        show_scalar_bar=True,
+                        scalar_bar_args={'title': 'Material ID', 'vertical': True},
+                    )
+                else:
+                    plotter.add_mesh(
+                        surface,
+                        show_edges=True,
+                        color="lightblue",
+                        edge_color="black",
+                        line_width=0.8,
+                        opacity=0.9,
+                    )
 
                 plotter.add_axes()
                 plotter.show_grid()

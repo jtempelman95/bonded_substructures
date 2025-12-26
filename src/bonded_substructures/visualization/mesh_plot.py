@@ -148,54 +148,86 @@ def plot_mesh_matplotlib(
             else:
                 ax.plot(coords[:, 0], coords[:, 1], "k-", linewidth=0.5, alpha=0.5)
 
-    # Get physical groups if requested
-    if show_physical_groups:
-        physical_groups = gmsh.model.getPhysicalGroups(dim=2)
+    # Color elements based on their y-coordinate (height) to distinguish materials
+    if show_physical_groups and mesh_dim == 3:
+        # Get all surface elements
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-        # Define colors for physical groups
+        # Find the interface height (estimate from node coordinates)
+        y_coords = node_coords[:, 1]
+        y_min, y_max = y_coords.min(), y_coords.max()
+        y_interface = (y_min + y_max) / 2  # Approximate interface location
+        interface_tolerance = (y_max - y_min) * 0.15  # 15% tolerance for interface region
+
+        # Define colors for materials
+        color_material_1 = '#FF6B6B'  # Red for bottom material
+        color_material_2 = '#4ECDC4'  # Cyan for top material
+        color_interface = '#FFE66D'    # Yellow for interface region
+
+        # Plot all surface elements colored by their y-position
+        for elem_type, elem_tags, elem_nodes in zip(element_types, element_tags, element_node_tags):
+            if elem_type != 2:  # Only process triangles
+                continue
+
+            nodes_per_elem = 3
+            elem_nodes = elem_nodes.reshape(-1, nodes_per_elem)
+
+            for elem_node in elem_nodes:
+                coords = np.array([node_coords[node_map[node]] for node in elem_node])
+
+                # Determine color based on centroid y-coordinate
+                centroid_y = coords[:, 1].mean()
+
+                if abs(centroid_y - y_interface) < interface_tolerance:
+                    color = color_interface
+                elif centroid_y < y_interface:
+                    color = color_material_1
+                else:
+                    color = color_material_2
+
+                # Plot triangular face
+                tri = Poly3DCollection([coords], alpha=0.7, facecolor=color, edgecolor='k', linewidth=0.3)
+                ax.add_collection3d(tri)
+
+        # Add legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor=color_material_1, label='Material 1 (Bottom)'),
+            Patch(facecolor=color_material_2, label='Material 2 (Top)'),
+            Patch(facecolor=color_interface, label='Interface/Disbond')
+        ]
+        ax.legend(handles=legend_elements, loc="upper right")
+
+    elif show_physical_groups and mesh_dim == 2:
+        # Original 2D coloring logic
+        physical_groups = gmsh.model.getPhysicalGroups(dim=2)
         colors = plt.cm.Set3(np.linspace(0, 1, len(physical_groups)))
 
         for i, (dim, tag) in enumerate(physical_groups):
-            # Get elements in this physical group
             try:
                 elem_tags = gmsh.model.mesh.getElements(dim=2, tag=tag)[1]
-
                 if len(elem_tags) == 0:
                     continue
 
-                # Get element types and node tags
                 elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2, tag=tag)
             except Exception as e:
-                # Skip physical groups with no elements or errors
                 print(f"Warning: Could not get elements for physical group {tag}: {e}")
                 continue
 
             for elem_type, elem_node_tags in zip(elem_types, elem_nodes):
-                # Get nodes per element
-                if elem_type == 2:  # Triangle
+                if elem_type == 2:
                     nodes_per_elem = 3
-                elif elem_type == 3:  # Quadrangle
+                elif elem_type == 3:
                     nodes_per_elem = 4
                 else:
                     continue
 
-                # Reshape element nodes
                 elem_node_tags = elem_node_tags.reshape(-1, nodes_per_elem)
 
-                # Plot each element with color
                 for elem_node in elem_node_tags:
                     coords = np.array([node_coords[node_map[node]] for node in elem_node])
+                    ax.fill(coords[:, 0], coords[:, 1], color=colors[i], alpha=0.6)
 
-                    # Fill element
-                    if mesh_dim == 3:
-                        # For 3D, plot triangular faces
-                        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-                        tri = Poly3DCollection([coords], alpha=0.6, facecolor=colors[i], edgecolor='k', linewidth=0.3)
-                        ax.add_collection3d(tri)
-                    else:
-                        ax.fill(coords[:, 0], coords[:, 1], color=colors[i], alpha=0.6)
-
-            # Add label
             name = gmsh.model.getPhysicalName(dim, tag)
             ax.plot([], [], color=colors[i], label=name, linewidth=5)
 
