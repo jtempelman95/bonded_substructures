@@ -58,11 +58,15 @@ def plot_mesh_pyvista(
         cmap="Set3",
         edge_color="black",
         line_width=0.5,
+        opacity=0.8,
     )
 
     plotter.add_axes()
     plotter.show_grid()
-    plotter.view_xy()
+
+    # Set camera position for better 3D view
+    plotter.camera_position = 'isometric'
+    plotter.camera.zoom(1.2)
 
     if notebook:
         plotter.show()
@@ -77,7 +81,7 @@ def plot_mesh_matplotlib(
     figsize: tuple = (10, 6),
     save_path: Optional[Union[str, Path]] = None,
 ) -> plt.Figure:
-    """Visualize 2D mesh using Matplotlib.
+    """Visualize mesh using Matplotlib (surface view for 3D meshes).
 
     Args:
         mesh_file: Path to .msh file. If None, uses current gmsh model
@@ -103,11 +107,19 @@ def plot_mesh_matplotlib(
     # Create node tag to index mapping
     node_map = {tag: i for i, tag in enumerate(node_tags)}
 
-    # Get elements (2D elements - triangles and quads)
+    # Check if we have 3D or 2D mesh
+    has_3d = len(gmsh.model.mesh.getElements(dim=3)[0]) > 0
+    mesh_dim = 3 if has_3d else 2
+
+    # Get surface elements for visualization
     element_types, element_tags, element_node_tags = gmsh.model.mesh.getElements(dim=2)
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=figsize)
+    # Create figure with 3D axes if mesh is 3D
+    if mesh_dim == 3:
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111, projection='3d')
+    else:
+        fig, ax = plt.subplots(figsize=figsize)
 
     # Plot elements
     for elem_type, elem_tags, elem_nodes in zip(element_types, element_tags, element_node_tags):
@@ -131,7 +143,10 @@ def plot_mesh_matplotlib(
             coords = np.vstack([coords, coords[0]])
 
             # Plot element edges
-            ax.plot(coords[:, 0], coords[:, 1], "k-", linewidth=0.5, alpha=0.5)
+            if mesh_dim == 3:
+                ax.plot(coords[:, 0], coords[:, 1], coords[:, 2], "k-", linewidth=0.5, alpha=0.3)
+            else:
+                ax.plot(coords[:, 0], coords[:, 1], "k-", linewidth=0.5, alpha=0.5)
 
     # Get physical groups if requested
     if show_physical_groups:
@@ -142,13 +157,18 @@ def plot_mesh_matplotlib(
 
         for i, (dim, tag) in enumerate(physical_groups):
             # Get elements in this physical group
-            elem_tags = gmsh.model.mesh.getElements(dim=2, tag=tag)[1]
+            try:
+                elem_tags = gmsh.model.mesh.getElements(dim=2, tag=tag)[1]
 
-            if len(elem_tags) == 0:
+                if len(elem_tags) == 0:
+                    continue
+
+                # Get element types and node tags
+                elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2, tag=tag)
+            except Exception as e:
+                # Skip physical groups with no elements or errors
+                print(f"Warning: Could not get elements for physical group {tag}: {e}")
                 continue
-
-            # Get element types and node tags
-            elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2, tag=tag)
 
             for elem_type, elem_node_tags in zip(elem_types, elem_nodes):
                 # Get nodes per element
@@ -167,7 +187,13 @@ def plot_mesh_matplotlib(
                     coords = np.array([node_coords[node_map[node]] for node in elem_node])
 
                     # Fill element
-                    ax.fill(coords[:, 0], coords[:, 1], color=colors[i], alpha=0.6)
+                    if mesh_dim == 3:
+                        # For 3D, plot triangular faces
+                        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+                        tri = Poly3DCollection([coords], alpha=0.6, facecolor=colors[i], edgecolor='k', linewidth=0.3)
+                        ax.add_collection3d(tri)
+                    else:
+                        ax.fill(coords[:, 0], coords[:, 1], color=colors[i], alpha=0.6)
 
             # Add label
             name = gmsh.model.getPhysicalName(dim, tag)
@@ -177,7 +203,11 @@ def plot_mesh_matplotlib(
 
     ax.set_xlabel("x")
     ax.set_ylabel("y")
-    ax.set_aspect("equal")
+    if mesh_dim == 3:
+        ax.set_zlabel("z")
+        ax.set_box_aspect([1, 1, 1])
+    else:
+        ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
     ax.set_title("Mesh Visualization")
 

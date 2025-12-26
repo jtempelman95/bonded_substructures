@@ -36,32 +36,35 @@ class BondedRectangle(BondedGeometry):
         material_1: MaterialProperties,
         material_2: MaterialProperties,
         mesh_size: float = 0.1,
+        depth: float = 1.0,  # Thickness of the plate in z-direction
     ):
         """Initialize the bonded rectangle geometry.
 
         Args:
-            width: Total width of the rectangle
-            height_1: Height of material 1 (substrate)
-            height_2: Height of material 2 (coating)
+            width: Total width of the rectangle (x-direction)
+            height_1: Height of material 1 substrate (y-direction)
+            height_2: Height of material 2 coating (y-direction)
             material_1: Substrate material properties
             material_2: Coating material properties
             mesh_size: Characteristic mesh element size
+            depth: Thickness/depth of the plate (z-direction)
         """
-        super().__init__(material_1, material_2, mesh_size, dim=2)
+        super().__init__(material_1, material_2, mesh_size, dim=3)  # Changed to 3D
         self.width = width
         self.height_1 = height_1
         self.height_2 = height_2
         self.total_height = height_1 + height_2
+        self.depth = depth
 
         # Disbond parameters
         self._has_disbond = False
-        self._disbond_position: Optional[Tuple[float, float]] = None
+        self._disbond_position: Optional[Tuple[float, float, float]] = None  # Now 3D
         self._disbond_size: Optional[float] = None
         self._disbond_shape: Optional[str] = None
 
     def add_disbond(
         self,
-        position: Tuple[float, float],
+        position: Tuple[float, float, float],
         size: float,
         shape: str = "circular",
     ) -> None:
@@ -71,7 +74,7 @@ class BondedRectangle(BondedGeometry):
         between the two materials.
 
         Args:
-            position: (x, y) center position of the disbond
+            position: (x, y, z) center position of the disbond
             size: Radius for circular disbond, half-width for rectangular
             shape: Shape of disbond ('circular' or 'rectangular')
         """
@@ -84,7 +87,7 @@ class BondedRectangle(BondedGeometry):
                 f"Warning: Disbond y-position {position[1]} is not at interface "
                 f"(y={self.height_1}). Adjusting to interface."
             )
-            position = (position[0], self.height_1)
+            position = (position[0], self.height_1, position[2])
 
         self._has_disbond = True
         self._disbond_position = position
@@ -92,131 +95,138 @@ class BondedRectangle(BondedGeometry):
         self._disbond_shape = shape
 
     def create_geometry(self) -> None:
-        """Create the rectangle geometry with bonded materials.
+        """Create 3D plate geometry with bonded materials.
 
-        Creates a 2D rectangle divided into two horizontal regions with
-        an optional disbond at the interface.
+        Creates two 3D boxes (plates) stacked on top of each other with
+        an optional disbond volume at the interface.
         """
-        # Create points for the rectangle
-        # Bottom left, bottom right, top right, top left
-        p1 = gmsh.model.geo.addPoint(0, 0, 0, self.mesh_size)
-        p2 = gmsh.model.geo.addPoint(self.width, 0, 0, self.mesh_size)
-        p3 = gmsh.model.geo.addPoint(self.width, self.total_height, 0, self.mesh_size)
-        p4 = gmsh.model.geo.addPoint(0, self.total_height, 0, self.mesh_size)
+        # Use OCC kernel for 3D box creation
+        gmsh.model.occ.synchronize()
 
-        # Interface points
-        p5 = gmsh.model.geo.addPoint(0, self.height_1, 0, self.mesh_size)
-        p6 = gmsh.model.geo.addPoint(self.width, self.height_1, 0, self.mesh_size)
-
-        # Create lines for material 1 (bottom)
-        l1 = gmsh.model.geo.addLine(p1, p2)  # Bottom
-        l2 = gmsh.model.geo.addLine(p2, p6)  # Right side (partial)
-        l3 = gmsh.model.geo.addLine(p6, p5)  # Interface
-        l4 = gmsh.model.geo.addLine(p5, p1)  # Left side (partial)
-
-        # Create lines for material 2 (top)
-        l5 = gmsh.model.geo.addLine(p5, p6)  # Interface (opposite direction from l3)
-        l6 = gmsh.model.geo.addLine(p6, p3)  # Right side (partial)
-        l7 = gmsh.model.geo.addLine(p3, p4)  # Top
-        l8 = gmsh.model.geo.addLine(p4, p5)  # Left side (partial)
-
-        # Create curve loops and surfaces
         if self._has_disbond:
-            # With disbond, we need to create the disbond region and modify the interface
-            surface_1, surface_2, disbond_surface = self._create_geometry_with_disbond(
-                p1, p2, p3, p4, p5, p6, l1, l2, l3, l4, l5, l6, l7, l8
-            )
+            # Create geometry with disbond using boolean operations
+            volume_1, volume_2, disbond_volume = self._create_3d_geometry_with_disbond()
         else:
-            # Without disbond, simple two-surface geometry
-            # Bottom surface: p1 -> p2 -> p6 -> p5 -> p1
-            curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
-            surface_1 = gmsh.model.geo.addPlaneSurface([curve_loop_1])
+            # Create simple two-box geometry
+            # Material 1 (substrate): bottom box
+            volume_1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.height_1, self.depth)
 
-            # Top surface: p5 -> p6 -> p3 -> p4 -> p5
-            curve_loop_2 = gmsh.model.geo.addCurveLoop([l5, l6, l7, l8])
-            surface_2 = gmsh.model.geo.addPlaneSurface([curve_loop_2])
-
-        gmsh.model.geo.synchronize()
-
-        # Define physical groups
-        gmsh.model.addPhysicalGroup(2, [surface_1], PhysicalTag.MATERIAL_1)
-        gmsh.model.setPhysicalName(2, PhysicalTag.MATERIAL_1, self.material_1.name)
-
-        gmsh.model.addPhysicalGroup(2, [surface_2], PhysicalTag.MATERIAL_2)
-        gmsh.model.setPhysicalName(2, PhysicalTag.MATERIAL_2, self.material_2.name)
-
-        # Boundaries
-        gmsh.model.addPhysicalGroup(1, [l1], PhysicalTag.BOUNDARY_BOTTOM)
-        gmsh.model.setPhysicalName(1, PhysicalTag.BOUNDARY_BOTTOM, "Bottom")
-
-        gmsh.model.addPhysicalGroup(1, [l7], PhysicalTag.BOUNDARY_TOP)
-        gmsh.model.setPhysicalName(1, PhysicalTag.BOUNDARY_TOP, "Top")
-
-        gmsh.model.addPhysicalGroup(1, [l4, l8], PhysicalTag.BOUNDARY_LEFT)
-        gmsh.model.setPhysicalName(1, PhysicalTag.BOUNDARY_LEFT, "Left")
-
-        gmsh.model.addPhysicalGroup(1, [l2, l6], PhysicalTag.BOUNDARY_RIGHT)
-        gmsh.model.setPhysicalName(1, PhysicalTag.BOUNDARY_RIGHT, "Right")
-
-        # Interface
-        if self._has_disbond:
-            gmsh.model.addPhysicalGroup(2, [disbond_surface], PhysicalTag.DISBOND_REGION)
-            gmsh.model.setPhysicalName(2, PhysicalTag.DISBOND_REGION, "Disbond")
-        else:
-            gmsh.model.addPhysicalGroup(1, [l3], PhysicalTag.INTERFACE_BONDED)
-            gmsh.model.setPhysicalName(1, PhysicalTag.INTERFACE_BONDED, "Bonded Interface")
-
-    def _create_geometry_with_disbond(
-        self, p1, p2, p3, p4, p5, p6, l1, l2, l3, l4, l5, l6, l7, l8
-    ) -> Tuple[int, int, int]:
-        """Create geometry with a disbond region.
-
-        For the initial version, we create a simple embedded disk at the interface
-        that will be meshed separately and tagged as the disbond region.
-
-        Args:
-            p1-p6: Point tags
-            l1-l8: Line tags
-
-        Returns:
-            Tuple of (surface_1, surface_2, disbond_surface) tags
-        """
-        # Create the two main rectangles first (same as without disbond)
-        curve_loop_1 = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
-        surface_1 = gmsh.model.geo.addPlaneSurface([curve_loop_1])
-
-        curve_loop_2 = gmsh.model.geo.addCurveLoop([l5, l6, l7, l8])
-        surface_2 = gmsh.model.geo.addPlaneSurface([curve_loop_2])
-
-        # Create a thin disbond region embedded at the interface using OCC
-        gmsh.model.geo.synchronize()
-
-        x_center, y_center = self._disbond_position
-        size = self._disbond_size
-
-        # Create a thin rectangular disbond region at the interface
-        # This represents a delamination zone
-        disbond_thickness = self.mesh_size * 0.1  # Very thin layer
-        y_bottom = y_center - disbond_thickness / 2
-        y_top = y_center + disbond_thickness / 2
-
-        if self._disbond_shape == "circular":
-            # Create circular disbond using OCC
-            disbond_surface = gmsh.model.occ.addDisk(x_center, y_center, 0, size, size)
-        else:  # rectangular
-            width_disbond = size * 2
-            x_corner = x_center - size
-            disbond_surface = gmsh.model.occ.addRectangle(
-                x_corner, y_bottom, 0, width_disbond, disbond_thickness
+            # Material 2 (coating): top box
+            volume_2 = gmsh.model.occ.addBox(
+                0, self.height_1, 0, self.width, self.height_2, self.depth
             )
+
+            disbond_volume = None
 
         gmsh.model.occ.synchronize()
 
-        # Note: The disbond is created as a separate surface that overlaps the interface
-        # In a more sophisticated version, we would use boolean operations to
-        # properly split the domains. For now, this creates a marked region.
+        # Define physical groups for volumes
+        gmsh.model.addPhysicalGroup(3, [volume_1], PhysicalTag.MATERIAL_1)
+        gmsh.model.setPhysicalName(3, PhysicalTag.MATERIAL_1, self.material_1.name)
 
-        return surface_1, surface_2, disbond_surface
+        gmsh.model.addPhysicalGroup(3, [volume_2], PhysicalTag.MATERIAL_2)
+        gmsh.model.setPhysicalName(3, PhysicalTag.MATERIAL_2, self.material_2.name)
+
+        if disbond_volume is not None:
+            gmsh.model.addPhysicalGroup(3, [disbond_volume], PhysicalTag.DISBOND_REGION)
+            gmsh.model.setPhysicalName(3, PhysicalTag.DISBOND_REGION, "Disbond")
+
+        # Get boundary surfaces for physical groups
+        # This is more complex in 3D - we'll mark key surfaces
+        all_surfaces = gmsh.model.occ.getEntities(dim=2)
+
+        # Bottom surface (y=0)
+        bottom_surfaces = []
+        # Top surface (y=total_height)
+        top_surfaces = []
+
+        for dim, tag in all_surfaces:
+            com = gmsh.model.occ.getCenterOfMass(dim, tag)
+            if np.isclose(com[1], 0, atol=1e-6):  # Bottom
+                bottom_surfaces.append(tag)
+            elif np.isclose(com[1], self.total_height, atol=1e-6):  # Top
+                top_surfaces.append(tag)
+
+        if bottom_surfaces:
+            gmsh.model.addPhysicalGroup(2, bottom_surfaces, PhysicalTag.BOUNDARY_BOTTOM)
+            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_BOTTOM, "Bottom")
+
+        if top_surfaces:
+            gmsh.model.addPhysicalGroup(2, top_surfaces, PhysicalTag.BOUNDARY_TOP)
+            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_TOP, "Top")
+
+    def _create_3d_geometry_with_disbond(self) -> Tuple[int, int, int]:
+        """Create 3D geometry with a disbond volume at the interface.
+
+        Returns:
+            Tuple of (volume_1, volume_2, disbond_volume) tags
+        """
+        x_center, y_center, z_center = self._disbond_position
+        size = self._disbond_size
+
+        # Create a thin disbond layer at the interface
+        disbond_thickness = self.mesh_size * 0.2  # Thin layer
+
+        # Create the disbond volume
+        if self._disbond_shape == "circular":
+            # Create cylindrical disbond (disk extruded in z-direction)
+            disbond_volume = gmsh.model.occ.addCylinder(
+                x_center, y_center - disbond_thickness / 2, z_center,
+                0, disbond_thickness, 0,  # Cylinder along y-axis
+                size  # radius
+            )
+        else:  # rectangular
+            # Create rectangular box disbond
+            width_disbond = size * 2
+            depth_disbond = size * 2
+            disbond_volume = gmsh.model.occ.addBox(
+                x_center - size,
+                y_center - disbond_thickness / 2,
+                z_center - size,
+                width_disbond,
+                disbond_thickness,
+                depth_disbond
+            )
+
+        # Create the two material boxes
+        box1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.height_1, self.depth)
+        box2 = gmsh.model.occ.addBox(0, self.height_1, 0, self.width, self.height_2, self.depth)
+
+        # Use fragment to split the boxes at the disbond
+        gmsh.model.occ.synchronize()
+        out, out_map = gmsh.model.occ.fragment(
+            [(3, box1), (3, box2)],
+            [(3, disbond_volume)]
+        )
+
+        gmsh.model.occ.synchronize()
+
+        # Identify the resulting volumes
+        volumes = [tag for dim, tag in out if dim == 3]
+
+        # Classify volumes by their y-centroid
+        volume_1 = None
+        volume_2 = None
+        disbond = None
+
+        for vol in volumes:
+            com = gmsh.model.occ.getCenterOfMass(3, vol)
+            if com[1] < self.height_1 - disbond_thickness:  # Below interface
+                volume_1 = vol
+            elif com[1] > self.height_1 + disbond_thickness:  # Above interface
+                volume_2 = vol
+            else:  # At interface
+                disbond = vol
+
+        # Fallback if identification fails
+        if volume_1 is None or volume_2 is None or disbond is None:
+            print("Warning: Could not properly identify disbond volumes.")
+            if len(volumes) >= 3:
+                return volumes[0], volumes[1], volumes[2]
+            else:
+                return box1, box2, disbond_volume
+
+        return volume_1, volume_2, disbond
 
     def get_mesh_info(self) -> dict:
         """Get information about the generated mesh.

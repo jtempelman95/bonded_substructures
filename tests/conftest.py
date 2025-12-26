@@ -26,6 +26,7 @@ def simple_rectangle():
         material_1=ALUMINUM_6061_T6,
         material_2=CARBON_EPOXY_UD,
         mesh_size=0.5,
+        depth=1.0,
     )
     yield geom
     geom.finalize()
@@ -34,6 +35,7 @@ def simple_rectangle():
 @pytest.fixture
 def rectangle_with_disbond():
     """Create a bonded rectangle with a disbond region."""
+    depth = 1.0
     geom = BondedRectangle(
         width=10.0,
         height_1=2.0,
@@ -41,8 +43,10 @@ def rectangle_with_disbond():
         material_1=ALUMINUM_6061_T6,
         material_2=CARBON_EPOXY_UD,
         mesh_size=0.5,
+        depth=depth,
     )
-    geom.add_disbond(position=(5.0, 2.0), size=1.0, shape="circular")
+    # 3D disbond position: (x_center, y_interface, z_center)
+    geom.add_disbond(position=(5.0, 2.0, depth / 2), size=1.0, shape="circular")
     yield geom
     geom.finalize()
 

@@ -19,10 +19,11 @@ def main():
     width = 10.0  # meters
     height_substrate = 2.0  # meters
     height_composite = 1.0  # meters
-    mesh_size = 0.3  # meters (finer for disbond)
+    depth = 2.0  # meters (thickness/depth of plate)
+    mesh_size = 0.5  # meters
 
-    # Disbond parameters
-    disbond_center = (width / 2, height_substrate)  # Center of rectangle, at interface
+    # Disbond parameters (3D coordinates: x, y, z)
+    disbond_center = (width / 2, height_substrate, depth / 2)  # Center of plate, at interface
     disbond_radius = 1.5  # meters
 
     print("Creating bonded rectangle geometry with disbond...")
@@ -42,6 +43,7 @@ def main():
         material_1=ALUMINUM_7075_T6,
         material_2=CARBON_EPOXY_UD,
         mesh_size=mesh_size,
+        depth=depth,
     )
 
     # Add disbond region

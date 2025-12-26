@@ -19,12 +19,14 @@ def main():
     width = 10.0  # meters
     height_substrate = 2.0  # meters
     height_composite = 1.0  # meters
+    depth = 2.0  # meters (thickness/depth of plate)
     mesh_size = 0.5  # meters
 
-    print("Creating bonded rectangle geometry...")
+    print("Creating bonded 3D plate geometry...")
     print(f"  Width: {width} m")
     print(f"  Substrate height: {height_substrate} m")
     print(f"  Composite height: {height_composite} m")
+    print(f"  Depth (thickness): {depth} m")
     print(f"  Mesh size: {mesh_size} m")
     print()
 
@@ -36,6 +38,7 @@ def main():
         material_1=ALUMINUM_6061_T6,
         material_2=CARBON_EPOXY_UD,
         mesh_size=mesh_size,
+        depth=depth,
     ) as geom:
         # Generate mesh
         print("Generating mesh...")
