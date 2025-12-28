@@ -109,32 +109,23 @@ def duplicate_disbond_interface_nodes(
             if node in node_map_mat2:
                 new_cells[i, j] = node_map_mat2[node]
 
-    # Preserve original triangle surface elements
-    triangle_blocks = []
-    triangle_phys_tags = []
-    for i, cell_block in enumerate(mesh.cells):
-        if cell_block.type == "triangle":
-            triangle_blocks.append(("triangle", cell_block.data))
-            if "gmsh:physical" in mesh.cell_data:
-                triangle_phys_tags.append(mesh.cell_data["gmsh:physical"][i])
-
-    # Create new mesh with updated connectivity
+    # Create new mesh with only tetra elements (dolfinx only needs volume elements)
     new_cells_list = [("tetra", new_cells)]
     new_cell_data = {"gmsh:physical": [all_phys_tags]}
 
-    # Add triangles back
-    if triangle_blocks:
-        new_cells_list = triangle_blocks + [("tetra", new_cells)]
-        new_cell_data = {"gmsh:physical": triangle_phys_tags + [all_phys_tags]}
+    # Preserve field_data (physical names) from original mesh
+    field_data = mesh.field_data if hasattr(mesh, 'field_data') and mesh.field_data else {}
 
     new_mesh = meshio.Mesh(
         points=points,
         cells=new_cells_list,
         cell_data=new_cell_data,
+        field_data=field_data,
     )
 
-    # Write output mesh
-    meshio.write(output_mesh_file, new_mesh)
+    # Write output mesh in gmsh format 4.1 ASCII (compatible with dolfinx)
+    # Use binary=False to ensure dolfinx can read the physical groups
+    meshio.write(output_mesh_file, new_mesh, file_format="gmsh", binary=False)
 
     stats = {
         "original_nodes": n_original_points,

@@ -3,6 +3,11 @@
 This example demonstrates how to visualize generated meshes using both
 matplotlib (for 2D plots) and pyvista (for interactive 3D visualization).
 
+COORDINATE SYSTEM:
+- x-y plane: In-plane dimensions (width × length)
+- z-direction: Through-thickness (material stacking)
+- Bond interface: x-y plane at z = t1
+
 Saves visualizations as PNG files in the examples/output directory.
 
 Run examples 01 or 02 first to generate mesh files.
@@ -25,8 +30,9 @@ def main():
 
     # Mesh files to visualize
     mesh_files = {
-        "rectangle_basic.msh": "basic",
-        "rectangle_disbond.msh": "disbond",
+        "bonded_plate_basic.msh": "basic_plate",
+        "bonded_plate_disbond.msh": "disbond_plate",
+        "wide_plate_disbond.msh": "wide_plate",
     }
 
     print("Visualizing meshes and saving to examples/output/")
@@ -121,51 +127,51 @@ def main():
                     surface = mesh.extract_surface()
 
                     # Transfer material data from volume to surface based on geometry
-                    # Color surface elements by their y-coordinate
+                    # Color surface elements by their z-coordinate (through-thickness)
                     if mesh.n_points > 0:
                         import numpy as np
 
                         # Find actual interface height from the volume mesh physical tags
-                        # Get y-coordinates of nodes in each material
-                        mat1_y_coords = []
-                        mat2_y_coords = []
+                        # Get z-coordinates of nodes in each material
+                        mat1_z_coords = []
+                        mat2_z_coords = []
 
                         if physical_tags is not None and cells is not None:
                             for i, tag in enumerate(physical_tags):
                                 elem = cells[i]  # Tetrahedral element
-                                elem_y_coords = [mesh.points[node, 1] for node in elem]
-                                if tag == 1:  # Material 1
-                                    mat1_y_coords.extend(elem_y_coords)
-                                elif tag == 2:  # Material 2
-                                    mat2_y_coords.extend(elem_y_coords)
+                                elem_z_coords = [mesh.points[node, 2] for node in elem]
+                                if tag == 1:  # Material 1 (substrate)
+                                    mat1_z_coords.extend(elem_z_coords)
+                                elif tag == 2:  # Material 2 (coating)
+                                    mat2_z_coords.extend(elem_z_coords)
 
                         # Interface is at top of Material 1 / bottom of Material 2
-                        if mat1_y_coords and mat2_y_coords:
-                            mat1_max_y = max(mat1_y_coords)
-                            mat2_min_y = min(mat2_y_coords)
-                            y_interface = (mat1_max_y + mat2_min_y) / 2
+                        if mat1_z_coords and mat2_z_coords:
+                            mat1_max_z = max(mat1_z_coords)
+                            mat2_min_z = min(mat2_z_coords)
+                            z_interface = (mat1_max_z + mat2_min_z) / 2
                         else:
-                            y_coords = surface.points[:, 1]
-                            y_min, y_max = y_coords.min(), y_coords.max()
-                            y_interface = (y_min + y_max) / 2
+                            z_coords = surface.points[:, 2]
+                            z_min, z_max = z_coords.min(), z_coords.max()
+                            z_interface = (z_min + z_max) / 2
 
-                        y_coords = surface.points[:, 1]
-                        y_min, y_max = y_coords.min(), y_coords.max()
-                        interface_tolerance = (y_max - y_min) * 0.01  # Very thin interface (1% of height)
+                        z_coords = surface.points[:, 2]
+                        z_min, z_max = z_coords.min(), z_coords.max()
+                        interface_tolerance = (z_max - z_min) * 0.01  # Very thin interface (1% of thickness)
 
-                        # Assign material IDs based on cell centroid y-position
+                        # Assign material IDs based on cell centroid z-position
                         material_ids = np.zeros(surface.n_cells)
                         for i in range(surface.n_cells):
                             cell = surface.get_cell(i)
                             point_ids = cell.point_ids
-                            centroid_y = np.mean([surface.points[pid, 1] for pid in point_ids])
+                            centroid_z = np.mean([surface.points[pid, 2] for pid in point_ids])
 
-                            if abs(centroid_y - y_interface) < interface_tolerance:
-                                material_ids[i] = 30  # Interface
-                            elif centroid_y < y_interface:
-                                material_ids[i] = 1   # Material 1
+                            if abs(centroid_z - z_interface) < interface_tolerance:
+                                material_ids[i] = 30  # Interface/Disbond
+                            elif centroid_z < z_interface:
+                                material_ids[i] = 1   # Material 1 (substrate, bottom)
                             else:
-                                material_ids[i] = 2   # Material 2
+                                material_ids[i] = 2   # Material 2 (coating, top)
 
                         surface.cell_data["Material"] = material_ids
                 else:
@@ -206,9 +212,9 @@ def main():
 
                     # Add custom legend
                     plotter.add_text(
-                        "Material 1 (Red)\nMaterial 2 (Cyan)\nDisbond (Yellow)",
+                        "Material 1 - Substrate (Red)\nMaterial 2 - Coating (Cyan)\nInterface/Disbond (Yellow)\n\nCoordinate System:\nx-y: In-plane\nz: Through-thickness",
                         position='upper_right',
-                        font_size=10,
+                        font_size=9,
                         color='black'
                     )
                 else:

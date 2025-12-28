@@ -1,4 +1,12 @@
-"""Rectangle geometry with bonded materials and optional disbond."""
+"""Rectangle geometry with bonded materials and optional disbond.
+
+COORDINATE SYSTEM:
+- x-y plane: In-plane dimensions (width × length)
+- z-direction: Through-thickness (material stacking)
+- Bond interface: x-y plane at z = t1
+- Material 1 (substrate): 0 ≤ z ≤ t1
+- Material 2 (coating): t1 ≤ z ≤ t1 + t2
+"""
 
 from typing import Optional, Tuple
 
@@ -11,54 +19,75 @@ from bonded_substructures.mesh.markers import PhysicalTag
 
 
 class BondedRectangle(BondedGeometry):
-    """2D rectangular domain with two bonded materials.
+    """Bonded plate geometry with interface in x-y plane.
 
-    The rectangle is divided horizontally into two regions:
-    - Bottom region: material_1 (substrate)
-    - Top region: material_2 (coating)
+    Creates a rectangular bonded plate with two materials stacked
+    in the z-direction (through-thickness). The bond interface is
+    a horizontal plane at z = t1.
 
-    An optional disbond region can be added at the interface.
+    Physical setup:
+        - Material 1 (substrate): Bottom layer, 0 ≤ z ≤ t1
+        - Material 2 (coating): Top layer, t1 ≤ z ≤ t1 + t2
+        - Bond interface: x-y plane at z = t1
+        - Disbond: Region in x-y plane at interface
+
+    Default dimensions (easily modifiable):
+        - width: 0.3048 m (1 ft, x-direction)
+        - length: 0.3048 m (1 ft, y-direction)
+        - t1: 0.00381 m (0.15 in substrate thickness)
+        - t2: 0.00254 m (0.10 in coating thickness)
+        - total: 0.00635 m (0.25 in total thickness)
 
     Attributes:
-        width: Total width of the rectangle
-        height_1: Height of material 1 (substrate)
-        height_2: Height of material 2 (coating)
+        width: Plate width in x-direction (m)
+        length: Plate length in y-direction (m)
+        t1: Substrate thickness in z-direction (m)
+        t2: Coating thickness in z-direction (m)
         material_1: Properties of substrate material
         material_2: Properties of coating material
-        mesh_size: Characteristic mesh element size
+        mesh_size: Characteristic mesh element size (m)
     """
 
     def __init__(
         self,
-        width: float,
-        height_1: float,
-        height_2: float,
-        material_1: MaterialProperties,
-        material_2: MaterialProperties,
-        mesh_size: float = 0.1,
-        depth: float = 1.0,  # Thickness of the plate in z-direction
+        width: float = 0.3048,  # 1 ft
+        length: float = 0.3048,  # 1 ft
+        t1: float = 0.00381,  # 0.15 in substrate
+        t2: float = 0.00254,  # 0.10 in coating
+        material_1: MaterialProperties = None,
+        material_2: MaterialProperties = None,
+        mesh_size: float = 0.025,  # 25 mm (about 1 inch)
     ):
-        """Initialize the bonded rectangle geometry.
+        """Initialize the bonded plate geometry.
 
         Args:
-            width: Total width of the rectangle (x-direction)
-            height_1: Height of material 1 substrate (y-direction)
-            height_2: Height of material 2 coating (y-direction)
+            width: Plate width in x-direction (m), default 0.3048 m (1 ft)
+            length: Plate length in y-direction (m), default 0.3048 m (1 ft)
+            t1: Substrate thickness in z-direction (m), default 0.00381 m (0.15 in)
+            t2: Coating thickness in z-direction (m), default 0.00254 m (0.10 in)
             material_1: Substrate material properties
             material_2: Coating material properties
-            mesh_size: Characteristic mesh element size
-            depth: Thickness/depth of the plate (z-direction)
+            mesh_size: Characteristic mesh element size (m), default 0.025 m (25 mm)
         """
-        super().__init__(material_1, material_2, mesh_size, dim=3)  # Changed to 3D
+        # Default materials if not provided
+        if material_1 is None:
+            from bonded_substructures.materials import ALUMINUM_7075_T6
+            material_1 = ALUMINUM_7075_T6
+        if material_2 is None:
+            from bonded_substructures.materials import CARBON_EPOXY_UD
+            material_2 = CARBON_EPOXY_UD
+
+        super().__init__(material_1, material_2, mesh_size, dim=3)
+
         self.width = width
-        self.height_1 = height_1
-        self.height_2 = height_2
-        self.total_height = height_1 + height_2
-        self.depth = depth
+        self.length = length
+        self.t1 = t1
+        self.t2 = t2
+        self.total_thickness = t1 + t2
 
         # Disbond parameters
         self._has_disbond = False
-        self._disbond_position: Optional[Tuple[float, float, float]] = None  # Now 3D
+        self._disbond_position: Optional[Tuple[float, float, float]] = None
         self._disbond_size: Optional[float] = None
         self._disbond_shape: Optional[str] = None
 
@@ -68,26 +97,26 @@ class BondedRectangle(BondedGeometry):
         size: float,
         shape: str = "circular",
     ) -> None:
-        """Add a disbond region at the interface.
+        """Add a disbond region at the bond interface.
 
-        The disbond is centered at the specified position on the interface
-        between the two materials.
+        The disbond is a region in the x-y plane at z = t1 (bond interface).
 
         Args:
             position: (x, y, z) center position of the disbond
-            size: Radius for circular disbond, half-width for rectangular
+                     Note: z will be automatically set to t1 (bond interface)
+            size: Radius for circular disbond, half-width for rectangular (m)
             shape: Shape of disbond ('circular' or 'rectangular')
         """
         if shape not in ["circular", "rectangular"]:
             raise ValueError("Disbond shape must be 'circular' or 'rectangular'")
 
-        # Validate position is at interface
-        if not np.isclose(position[1], self.height_1):
+        # Force disbond to be at interface (z = t1)
+        if not np.isclose(position[2], self.t1):
             print(
-                f"Warning: Disbond y-position {position[1]} is not at interface "
-                f"(y={self.height_1}). Adjusting to interface."
+                f"Warning: Disbond z-position {position[2]} is not at interface "
+                f"(z={self.t1}). Adjusting to interface."
             )
-            position = (position[0], self.height_1, position[2])
+            position = (position[0], position[1], self.t1)
 
         self._has_disbond = True
         self._disbond_position = position
@@ -95,32 +124,27 @@ class BondedRectangle(BondedGeometry):
         self._disbond_shape = shape
 
     def create_geometry(self) -> None:
-        """Create 3D plate geometry with bonded materials.
+        """Create 3D bonded plate geometry.
 
-        Creates two 3D boxes (plates) stacked on top of each other with
-        an optional disbond volume at the interface.
+        Creates two 3D boxes (plates) stacked in z-direction:
+        - Box 1: 0 ≤ x ≤ width, 0 ≤ y ≤ length, 0 ≤ z ≤ t1
+        - Box 2: 0 ≤ x ≤ width, 0 ≤ y ≤ length, t1 ≤ z ≤ t1+t2
+
+        If disbond present, uses boolean fragment to split the interface.
         """
-        # Use OCC kernel for 3D box creation
         gmsh.model.occ.synchronize()
 
         if self._has_disbond:
-            # Create geometry with disbond using boolean operations
-            volume_1, volume_2, disbond_volume = self._create_3d_geometry_with_disbond()
+            volume_1, volume_2, disbond_volume = self._create_geometry_with_disbond()
         else:
-            # Create simple two-box geometry
-            # Material 1 (substrate): bottom box
-            volume_1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.height_1, self.depth)
-
-            # Material 2 (coating): top box
-            volume_2 = gmsh.model.occ.addBox(
-                0, self.height_1, 0, self.width, self.height_2, self.depth
-            )
-
+            # Simple stacked boxes
+            volume_1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.length, self.t1)
+            volume_2 = gmsh.model.occ.addBox(0, 0, self.t1, self.width, self.length, self.t2)
             disbond_volume = None
 
         gmsh.model.occ.synchronize()
 
-        # Define physical groups for volumes
+        # Define physical groups for volumes (dimension 3)
         gmsh.model.addPhysicalGroup(3, [volume_1], PhysicalTag.MATERIAL_1)
         gmsh.model.setPhysicalName(3, PhysicalTag.MATERIAL_1, self.material_1.name)
 
@@ -131,73 +155,43 @@ class BondedRectangle(BondedGeometry):
             gmsh.model.addPhysicalGroup(3, [disbond_volume], PhysicalTag.DISBOND_REGION)
             gmsh.model.setPhysicalName(3, PhysicalTag.DISBOND_REGION, "Disbond")
 
-        # Get boundary surfaces for physical groups
-        # This is more complex in 3D - we'll mark key surfaces
-        all_surfaces = gmsh.model.occ.getEntities(dim=2)
+        # Add boundary surfaces
+        self._add_boundary_surfaces()
 
-        # Bottom surface (y=0)
-        bottom_surfaces = []
-        # Top surface (y=total_height)
-        top_surfaces = []
-
-        for dim, tag in all_surfaces:
-            com = gmsh.model.occ.getCenterOfMass(dim, tag)
-            if np.isclose(com[1], 0, atol=1e-6):  # Bottom
-                bottom_surfaces.append(tag)
-            elif np.isclose(com[1], self.total_height, atol=1e-6):  # Top
-                top_surfaces.append(tag)
-
-        if bottom_surfaces:
-            gmsh.model.addPhysicalGroup(2, bottom_surfaces, PhysicalTag.BOUNDARY_BOTTOM)
-            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_BOTTOM, "Bottom")
-
-        if top_surfaces:
-            gmsh.model.addPhysicalGroup(2, top_surfaces, PhysicalTag.BOUNDARY_TOP)
-            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_TOP, "Top")
-
-    def _create_3d_geometry_with_disbond(self) -> Tuple[int, int, int]:
-        """Create 3D geometry with a disbond volume at the interface.
-
-        Creates non-conformal mesh with duplicate nodes at disbond interface
-        for Craig-Bampton substructuring and contact mechanics.
+    def _create_geometry_with_disbond(self) -> Tuple[int, int, int]:
+        """Create geometry with disbond region at interface.
 
         Returns:
-            Tuple of (volume_1, volume_2, disbond_volume) tags
+            Tuple of (volume_1_tag, volume_2_tag, disbond_volume_tag)
         """
         x_center, y_center, z_center = self._disbond_position
         size = self._disbond_size
 
-        # Create a thin disbond layer at the interface
+        # Disbond is a thin disk in x-y plane at z = t1
         disbond_thickness = self.mesh_size * 0.2  # Thin layer
 
-        # Create the disbond volume
         if self._disbond_shape == "circular":
-            # Create cylindrical disbond (disk extruded in z-direction)
+            # Create a thin cylinder in x-y plane (axis in z-direction)
             disbond_volume = gmsh.model.occ.addCylinder(
-                x_center, y_center - disbond_thickness / 2, z_center,
-                0, disbond_thickness, 0,  # Cylinder along y-axis
+                x_center, y_center, z_center - disbond_thickness / 2,
+                0, 0, disbond_thickness,  # Cylinder axis in z-direction
                 size  # radius
             )
         else:  # rectangular
-            # Create rectangular box disbond
-            width_disbond = size * 2
-            depth_disbond = size * 2
+            # Create a thin box
             disbond_volume = gmsh.model.occ.addBox(
-                x_center - size,
-                y_center - disbond_thickness / 2,
-                z_center - size,
-                width_disbond,
-                disbond_thickness,
-                depth_disbond
+                x_center - size, y_center - size, z_center - disbond_thickness / 2,
+                2 * size, 2 * size, disbond_thickness
             )
 
-        # Create the two material boxes
-        box1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.height_1, self.depth)
-        box2 = gmsh.model.occ.addBox(0, self.height_1, 0, self.width, self.height_2, self.depth)
+        # Create main material volumes
+        box1 = gmsh.model.occ.addBox(0, 0, 0, self.width, self.length, self.t1)
+        box2 = gmsh.model.occ.addBox(0, 0, self.t1, self.width, self.length, self.t2)
 
-        # Use fragment to split the boxes at the disbond
-        # This creates conformal mesh, which we'll modify later
         gmsh.model.occ.synchronize()
+
+        # Use fragment to split materials at disbond interface
+        # This creates separate volumes for bonded and disbonded regions
         out, out_map = gmsh.model.occ.fragment(
             [(3, box1), (3, box2)],
             [(3, disbond_volume)]
@@ -205,146 +199,72 @@ class BondedRectangle(BondedGeometry):
 
         gmsh.model.occ.synchronize()
 
-        # Identify the resulting volumes
-        volumes = [tag for dim, tag in out if dim == 3]
-
-        # Classify volumes by their y-centroid
+        # Identify volumes by their z-coordinates
         volume_1 = None
         volume_2 = None
-        disbond = None
+        disbond_vol = None
 
-        for vol in volumes:
-            com = gmsh.model.occ.getCenterOfMass(3, vol)
-            if com[1] < self.height_1 - disbond_thickness:  # Below interface
-                volume_1 = vol
-            elif com[1] > self.height_1 + disbond_thickness:  # Above interface
-                volume_2 = vol
-            else:  # At interface
-                disbond = vol
+        for dim, tag in out:
+            if dim == 3:  # Volume
+                # Get bounding box to identify volume
+                bbox = gmsh.model.occ.getBoundingBox(dim, tag)
+                z_min, z_max = bbox[2], bbox[5]
+                z_center = (z_min + z_max) / 2
 
-        # Fallback if identification fails
-        if volume_1 is None or volume_2 is None or disbond is None:
-            print("Warning: Could not properly identify disbond volumes.")
-            if len(volumes) >= 3:
-                return volumes[0], volumes[1], volumes[2]
-            else:
-                return box1, box2, disbond_volume
+                # Check volume centroid to classify
+                mass = gmsh.model.occ.getMass(dim, tag)
+                com = gmsh.model.occ.getCenterOfMass(dim, tag)
 
-        return volume_1, volume_2, disbond
+                if z_center < self.t1 * 0.5:
+                    # Bottom material (substrate)
+                    if abs(mass - self.width * self.length * self.t1) < 1e-6:
+                        volume_1 = tag  # Main substrate
+                elif z_center > self.t1 + self.t2 * 0.5:
+                    # Top material (coating)
+                    if abs(mass - self.width * self.length * self.t2) < 1e-6:
+                        volume_2 = tag  # Main coating
+                else:
+                    # Near interface - likely disbond
+                    if abs(z_center - self.t1) < disbond_thickness:
+                        disbond_vol = tag
 
-    def duplicate_interface_nodes(self) -> None:
-        """Duplicate nodes at disbond interface for non-conformal contact.
+        # If classification failed, use default ordering
+        if volume_1 is None or volume_2 is None:
+            print("Warning: Volume classification failed, using default ordering")
+            volumes = [tag for dim, tag in out if dim == 3]
+            volume_1 = volumes[0] if len(volumes) > 0 else box1
+            volume_2 = volumes[1] if len(volumes) > 1 else box2
+            disbond_vol = volumes[2] if len(volumes) > 2 else disbond_volume
 
-        This creates separate node sets for each material at the disbond interface,
-        suitable for Craig-Bampton substructuring with contact mechanics.
+        return volume_1, volume_2, disbond_vol
 
-        After calling this function:
-        - Material 1 has its own boundary nodes at the disbond
-        - Material 2 has its own boundary nodes at the disbond
-        - Nodes are at the same coordinates but are not shared
-        """
-        if not self._has_disbond:
-            print("No disbond present - skipping node duplication")
-            return
+    def _add_boundary_surfaces(self) -> None:
+        """Add physical groups for boundary surfaces."""
+        # Get all surfaces
+        surfaces = gmsh.model.occ.getEntities(dim=2)
 
-        if not gmsh.isInitialized():
-            print("Gmsh not initialized - cannot duplicate nodes")
-            return
+        # Classify surfaces by position
+        bottom_surfaces = []  # z = 0
+        top_surfaces = []     # z = t1 + t2
+        side_surfaces = []    # x or y boundaries
 
-        # Get the disbond volume entities
-        disbond_entities = gmsh.model.getEntitiesForPhysicalGroup(3, PhysicalTag.DISBOND_REGION)
-        if not disbond_entities:
-            print("Warning: Disbond physical group exists but has no entities")
-            return
+        for dim, tag in surfaces:
+            bbox = gmsh.model.occ.getBoundingBox(dim, tag)
+            x_min, y_min, z_min = bbox[0], bbox[1], bbox[2]
+            x_max, y_max, z_max = bbox[3], bbox[4], bbox[5]
 
-        # Get material volume entities
-        mat1_entities = gmsh.model.getEntitiesForPhysicalGroup(3, PhysicalTag.MATERIAL_1)
-        mat2_entities = gmsh.model.getEntitiesForPhysicalGroup(3, PhysicalTag.MATERIAL_2)
+            # Bottom surface (z = 0)
+            if np.isclose(z_min, 0.0) and np.isclose(z_max, 0.0):
+                bottom_surfaces.append(tag)
+            # Top surface (z = t1 + t2)
+            elif np.isclose(z_min, self.total_thickness) and np.isclose(z_max, self.total_thickness):
+                top_surfaces.append(tag)
 
-        # For each disbond volume, find its boundary surfaces
-        nodes_to_duplicate = set()
-        for disbond_vol in disbond_entities:
-            boundaries = gmsh.model.getBoundary([(3, disbond_vol)], oriented=False)
+        # Create physical groups for boundaries
+        if bottom_surfaces:
+            gmsh.model.addPhysicalGroup(2, bottom_surfaces, PhysicalTag.BOUNDARY_BOTTOM)
+            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_BOTTOM, "Bottom")
 
-            for bdim, btag in boundaries:
-                # Get nodes on this boundary surface
-                _, node_tags, _ = gmsh.model.mesh.getNodes(abs(bdim), abs(btag))
-                nodes_to_duplicate.update(node_tags)
-
-        print(f"Duplicating {len(nodes_to_duplicate)} nodes at disbond interface...")
-
-        # For each node to duplicate, create new nodes and update element connectivity
-        node_mapping_mat1 = {}  # Original node -> new node for material 1
-        node_mapping_mat2 = {}  # Original node -> new node for material 2
-
-        for original_node in nodes_to_duplicate:
-            # Get node coordinates
-            coords, _, _ = gmsh.model.mesh.getNode(original_node)
-
-            # Create duplicate nodes for each material
-            new_node_mat1 = gmsh.model.mesh.addNode(coords[0], coords[1], coords[2])
-            new_node_mat2 = gmsh.model.mesh.addNode(coords[0], coords[1], coords[2])
-
-            node_mapping_mat1[original_node] = new_node_mat1
-            node_mapping_mat2[original_node] = new_node_mat2
-
-        # Update element connectivity for Material 1 volumes
-        for mat_vol in mat1_entities:
-            self._update_volume_connectivity(mat_vol, node_mapping_mat1)
-
-        # Update element connectivity for Material 2 volumes
-        for mat_vol in mat2_entities:
-            self._update_volume_connectivity(mat_vol, node_mapping_mat2)
-
-        print(f"✓ Created non-conformal interface with {len(nodes_to_duplicate)} duplicate node pairs")
-
-    def _update_volume_connectivity(self, volume_tag: int, node_mapping: dict) -> None:
-        """Update element connectivity for a volume using the node mapping."""
-        # Get all elements in this volume
-        elem_types, elem_tags_list, elem_node_tags_list = gmsh.model.mesh.getElements(3, volume_tag)
-
-        for elem_type, elem_tags, elem_node_tags in zip(elem_types, elem_tags_list, elem_node_tags_list):
-            # Get number of nodes per element
-            elem_name, _, _, num_nodes, _, _ = gmsh.model.mesh.getElementProperties(elem_type)
-
-            # Reshape to get individual elements
-            elem_node_tags = elem_node_tags.reshape(-1, num_nodes)
-
-            # Update connectivity
-            for i, elem_tag in enumerate(elem_tags):
-                nodes = elem_node_tags[i]
-                new_nodes = [node_mapping.get(node, node) for node in nodes]
-
-                # Only update if nodes changed
-                if new_nodes != list(nodes):
-                    # Note: gmsh doesn't have direct API to modify element connectivity
-                    # We would need to delete and recreate elements
-                    # For now, we'll use a different approach
-                    pass
-
-        # Note: The above approach has limitations with gmsh API
-        # A better approach is to use gmsh's reclassify or partition features
-        # For now, we'll print a message that this needs dolfinx processing
-        print(f"  Volume {volume_tag}: Node duplication marked (requires post-processing in dolfinx)")
-
-    def get_mesh_info(self) -> dict:
-        """Get information about the generated mesh.
-
-        Returns:
-            Dictionary with mesh statistics
-        """
-        if not gmsh.isInitialized():
-            return {"error": "Mesh not generated"}
-
-        num_nodes = len(gmsh.model.mesh.getNodes()[0])
-        num_elements = len(gmsh.model.mesh.getElements()[2][0])
-
-        return {
-            "num_nodes": num_nodes,
-            "num_elements": num_elements,
-            "width": self.width,
-            "height_1": self.height_1,
-            "height_2": self.height_2,
-            "total_height": self.total_height,
-            "has_disbond": self._has_disbond,
-        }
+        if top_surfaces:
+            gmsh.model.addPhysicalGroup(2, top_surfaces, PhysicalTag.BOUNDARY_TOP)
+            gmsh.model.setPhysicalName(2, PhysicalTag.BOUNDARY_TOP, "Top")
