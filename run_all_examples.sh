@@ -50,6 +50,24 @@ run_example "02_bonded_plate_disbond.py" "1ft × 1ft × 0.25in plate with 1in di
 # Example 03: Visualize meshes
 run_example "03_visualize_mesh.py" "Generate mesh visualizations (matplotlib + pyvista)"
 
+# Example 04: Basic bonded cylinder
+run_example "04_bonded_cylinder_basic.py" "Basic hollow cylinder (COPV-style, no disbond)"
+
+# Example 05: Bonded cylinder with disbond
+run_example "05_bonded_cylinder_disbond.py" "Hollow cylinder with circumferential disbond"
+
+# Example 06: Visualize cylinder meshes
+if [ -f "examples/06_visualize_cylinder.py" ]; then
+    echo -e "${BLUE}Note: Example 06 requires pyvista${NC}"
+    if run_example "06_visualize_cylinder.py" "Visualize cylinder meshes"; then
+        :
+    else
+        echo -e "${BLUE}Example 06 failed - pyvista may not be available${NC}"
+        ((FAILED--))
+        ((SKIPPED++))
+    fi
+fi
+
 # Example 07: Wide plate with disbond (if it exists)
 if [ -f "examples/07_wide_plate_disbond.py" ]; then
     echo -e "${BLUE}Note: Example 07 may have different dimensions${NC}"
