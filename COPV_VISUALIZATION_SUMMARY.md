@@ -89,7 +89,7 @@ tests/test_geometry/test_cylinder.py::test_cylinder_context_manager PASSED
 
 ## Visualizations Generated
 
-### Cross-Section Plots
+### Matplotlib Cross-Section Plots
 
 Both configurations have 4-panel cross-section visualizations:
 
@@ -115,6 +115,64 @@ Both configurations have 4-panel cross-section visualizations:
 **Files:**
 - `examples/output/copv_ideal_sections.png` (461 KB)
 - `examples/output/copv_disbond_sections.png` (540 KB)
+
+---
+
+### PyVista 3D Visualizations
+
+Comprehensive 3D mesh renderings with material tagging and disbond highlighting.
+
+#### Ideal COPV (No Disbond)
+
+**Generated Files:**
+1. **copv_ideal_full_mesh.png** (87 KB)
+   - Isometric 3D view
+   - Material-colored mesh (substrate: tag 1, coating: tag 2)
+   - Shows complete cylindrical structure
+
+2. **copv_ideal_materials.png** (117 KB)
+   - Material separation view
+   - Substrate (Al 7075-T6) in steel blue, semi-transparent
+   - Coating (C/E) in light green, semi-transparent
+   - Legend with material labels
+
+3. **copv_ideal_multiview.png** (184 KB)
+   - 2×2 montage with 4 viewpoints
+   - Isometric, Top (XY), Side (XZ), Front (YZ)
+   - Material-colored in each view
+
+#### Disbonded COPV
+
+**Generated Files:**
+1. **copv_disbond_full_mesh.png** (76 KB)
+   - Isometric 3D view
+   - Material-colored mesh (substrate: tag 1, coating: tag 2, disbond: tag 30)
+   - Shows complete cylindrical structure with disbond region
+
+2. **copv_disbond_disbond_highlighted.png** (163 KB) ⭐
+   - **Substrate (Al 7075-T6)**: Steel blue, 30% opacity
+   - **Coating (C/E)**: Light green, 30% opacity
+   - **Disbond Region**: Bright red, 100% opacity with dark red edges
+   - Full circumferential band at interface clearly visible
+   - Legend with all three regions labeled
+
+3. **copv_disbond_disbond_only.png** (130 KB)
+   - Closeup view of disbond region only
+   - Red mesh with black edges
+   - Shows circumferential band geometry
+   - Titled "Disbond Region Only - Circumferential Band at Interface"
+
+4. **copv_disbond_cross_section.png** (68 KB)
+   - XZ plane slice through mid-height
+   - Material-colored cross-section
+   - Shows radial layer structure
+   - Disbond band visible in cross-section
+
+5. **copv_disbond_multiview.png** (170 KB)
+   - 2×2 montage with 4 viewpoints
+   - Isometric, Top (XY), Side (XZ), Front (YZ)
+   - Material-colored in each view
+   - Disbond region visible from all angles
 
 ---
 
@@ -217,13 +275,13 @@ Ideal for COPV pressure vessel analysis:
 
 ## Future Enhancements
 
-1. **Angular sector cutting** for partial circumferential disbonds
-2. **PyVista 3D rendering** (currently has scalar mismatch issue)
-3. **Interactive visualization** with material transparency
-4. **Pressure loading** boundary conditions
-5. **Multi-layer composite** overwrap with laminate stacking
-6. **Dome/hemisphere** end closures for realistic COPV
-7. **Axisymmetric analysis** option for computational efficiency
+1. **Angular sector cutting** for partial circumferential disbonds (currently only full 360° bands)
+2. **Interactive visualization** with rotatable 3D views (HTML export)
+3. **Pressure loading** boundary conditions for COPV burst analysis
+4. **Multi-layer composite** overwrap with laminate stacking sequences
+5. **Dome/hemisphere** end closures for realistic COPV geometry
+6. **Axisymmetric analysis** option for computational efficiency
+7. **Animation** of disbond propagation or pressure loading
 
 ---
 
@@ -243,16 +301,24 @@ Ideal for COPV pressure vessel analysis:
 - Disbond propagation studies
 
 ✅ **Visualizations provide clear view of:**
-- Cylindrical structure
-- Material layers
-- Disbond location and extent
-- Mesh density and quality
+- Cylindrical structure (matplotlib + PyVista)
+- Material layers (both 2D cross-sections and 3D renderings)
+- Disbond location and extent (highlighted in bright red)
+- Mesh density and quality (multiple viewpoints)
+
+✅ **PyVista visualizations successfully completed:**
+- Material-colored 3D mesh views
+- Disbond region clearly tagged (tag=30) and highlighted in red
+- Semi-transparent substrate/coating with opaque disbond overlay
+- Cross-sections and multi-view montages
+- Total: 8 PyVista PNG images + 2 matplotlib cross-section plots
 
 **Repository Status**: Production-ready for COPV modeling and analysis! 🚀
 
 ---
 
 **Generated**: 2025-12-29
+**Updated**: 2025-12-29 (added PyVista visualizations)
 **Tools**: bonded_substructures v2.0 + BondedCylinder geometry
 **Tests**: 8/8 passed
-**Visualizations**: 2 cross-section plots created
+**Visualizations**: 2 matplotlib cross-section plots + 8 PyVista 3D renderings
