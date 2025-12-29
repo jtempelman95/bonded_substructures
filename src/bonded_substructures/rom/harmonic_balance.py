@@ -265,15 +265,18 @@ class HarmonicBalanceAFT:
 
                 if contact_type == 'penalty':
                     # Penalty method: restoring force when gap < 0
+                    # Gap definition: gap = g0 - u (negative when penetration)
+                    # Contact force should oppose penetration: f = -k * gap
                     if gap < 0:
-                        f_nl_time[dof, t_idx] = k_contact * abs(gap)
+                        f_nl_time[dof, t_idx] = -k_contact * gap
                     # else: no force (separation allowed)
 
                 elif contact_type == 'complementarity':
                     # More accurate: f ≥ 0, gap ≥ 0, f*gap = 0
                     # This requires iterative solution
+                    # For now, using penalty method with correct sign
                     if gap < 0:
-                        f_nl_time[dof, t_idx] = k_contact * abs(gap)
+                        f_nl_time[dof, t_idx] = -k_contact * gap
 
         return f_nl_time
 
